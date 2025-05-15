@@ -17,3 +17,12 @@ export function loadModel(url) {
     loader.load(url, resolve, undefined, reject);
   });
 }
+
+export function cullHiddenMeshes(scene) {
+  scene.traverse((obj) => {
+    if (obj.isMesh) {
+      obj.frustumCulled = true;
+      // Add any additional visibility/culling logic here
+    }
+  });
+}
