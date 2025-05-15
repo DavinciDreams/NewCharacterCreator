@@ -1,12 +1,32 @@
-import React, { createContext } from "react"
+// src/utils/threeUtils.js
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+
+export function initScene(container) {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  container.appendChild(renderer.domElement);
+  return { scene, camera, renderer };
+}
+
+export function loadModel(url) {
+  const loader = new GLTFLoader();
+  return new Promise((resolve, reject) => {
+    loader.load(url, resolve, undefined, reject);
+  });
+}import React, { createContext } from "react"
 import useSound from "use-sound"
-import soundFileSpecs from "/sound/sound-files.json"
 import soundUrl from "/sound/sounds.mp3"
 
 export const SoundContext = createContext()
 
-export const SoundProvider = (props) => {
-  const _getSoundFiles = regex => soundFileSpecs.find(f => regex.test(f.name));
+export const SoundProvider = async (props) => {
+  const soundFiles = '/sound/sound-files.json?url';
+  const soundData = await fetch(soundFiles).then(res => res.json());
+
+  const _getSoundFiles = regex => soundData.find(f => regex.test(f.name));
 
   const [play] = useSound(soundUrl, {
     sprite: {
