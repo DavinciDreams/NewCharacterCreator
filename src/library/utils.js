@@ -8,6 +8,7 @@ import { combine } from "./merge-geometry";
 import { VRMLoaderPlugin } from "@pixiv/three-vrm"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { VRMHumanBoneName, VRMHumanBoneParentMap } from "@pixiv/three-vrm";
+import { initScene, loadModel } from '../utils/threeUtils';
 
 export function getAsArray(target) {
   if (target == null) return []
