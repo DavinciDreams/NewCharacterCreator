@@ -1,9 +1,9 @@
 import React, { createContext, useState, useCallback } from 'react';
 import {
-  OPENROUTER_API_URL,
+  MODEL_CONFIG,
+  DEFAULT_API_KEY,
   DEFAULT_MODEL,
-  AVAILABLE_MODELS,
-  DEFAULT_MODEL_OPTIONS
+  OPENROUTER_API_URL
 } from '../constants/llmModels';
 
 export const LLMContext = createContext();
@@ -60,7 +60,7 @@ export const LLMProvider = ({ children }) => {
             setApiKey,
             currentModel,
             setCurrentModel,
-            availableModels: AVAILABLE_MODELS,
+            availableModels: Object.keys(MODEL_CONFIG),
             queryLLM,
             isLoading,
             error

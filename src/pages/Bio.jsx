@@ -82,30 +82,36 @@ export const getRelationshipQuestionsAndAnswers = (personality) => {
   return { question, answer }
 }
 
-
 // Cache voice keys for performance.
 const voiceKeys = Object.keys(voices)
 const colorKeys = Object.keys(favouriteColors)
 
-function loadBioFromStorage(itemName){
-  const fullBioStr = localStorage.getItem(itemName)
-  if (fullBioStr)
-    return JSON.parse(fullBioStr)
-  return null
-}
+const saveToStorage = (itemName, data) => {
+  try {
+    localStorage.setItem(itemName, JSON.stringify(data));
+  } catch (error) {
+    console.error('Failed to save to storage:', error);
+  }
+};
 
-function saveBioToStorage(itemName, fullBio){
-  localStorage.setItem(itemName, JSON.stringify(fullBio))
-}
+const loadFromStorage = (itemName) => {
+  try {
+    const savedData = localStorage.getItem(itemName);
+    return savedData ? JSON.parse(savedData) : null;
+  } catch (error) {
+    console.error('Failed to load from storage:', error);
+    return null;
+  }
+};
 
-export const BioPage = ({ templateInfo, personality }) => {
+const BioPage = ({ templateInfo, personality }) => {
   const { playSound } = useContext(SoundContext)
   const { isMute, speak } = useContext(AudioContext)
   const { setViewMode } = useContext(ViewContext)
   const { apiKey, queryLLM, AVAILABLE_MODELS, DEFAULT_MODEL } = useContext(LLMContext)
   
   const [fullBio, setFullBio] = React.useState(
-    loadBioFromStorage(`${templateInfo.id}_fulBio`)
+    loadFromStorage(`${templateInfo.id}_fulBio`)
     ||
     getBio(templateInfo, personality)
   )
@@ -117,9 +123,24 @@ export const BioPage = ({ templateInfo, personality }) => {
   const [activeTab, setActiveTab] = useState('chat');
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
 
+  const [generatedBio, setGeneratedBio] = useState('');
+  const [isGeneratingBio, setIsGeneratingBio] = useState(false);
+  const [bioTraits, setBioTraits] = useState({
+    personality: '',
+    backstory: '', 
+    quirks: '',
+    aspirations: ''
+  });
+
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [showLoadConfirm, setShowLoadConfirm] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importData, setImportData] = useState('');
+
   useEffect(() => {
     if (templateInfo.id) {
-      const loadedBio = loadBioFromStorage(templateInfo.id);
+      const loadedBio = loadFromStorage(templateInfo.id);
       if (loadedBio) {
         setFullBio(loadedBio);
       } else {
@@ -130,7 +151,7 @@ export const BioPage = ({ templateInfo, personality }) => {
 
   useEffect(() => {
     if (fullBio.name) {
-      saveBioToStorage(templateInfo.id, fullBio);
+      saveToStorage(templateInfo.id, fullBio);
     }
   }, [fullBio, templateInfo.id]);
 
@@ -140,6 +161,16 @@ export const BioPage = ({ templateInfo, personality }) => {
       if (savedVoice) setSelectedVoice(savedVoice);
     }
   }, [fullBio?.id]);
+
+  useEffect(() => {
+    if (templateInfo.id) {
+      const savedBio = loadFromStorage(`character-bio-${templateInfo.id}`);
+      if (savedBio) {
+        setBioTraits(savedBio.traits);
+        setGeneratedBio(savedBio.fullBio);
+      }
+    }
+  }, [templateInfo.id]);
 
   const handleSendMessage = async () => {
     if (!userInput.trim()) return;
@@ -210,6 +241,98 @@ export const BioPage = ({ templateInfo, personality }) => {
 
   // Translate hook
   const { t } = useContext(LanguageContext);
+
+  const generateCharacterBio = async () => {
+    if (!fullBio.name || !templateInfo.id) return;
+    
+    setIsGeneratingBio(true);
+    
+    try {
+      const prompt = `Create a detailed character bio for ${fullBio.name}, a ${fullBio.age}-year-old with:
+`
+        + `- Voice: ${fullBio.voiceKey}
+`
+        + `- Personality: ${Object.entries(fullBio.personality).join(', ')}
+`
+        + `- Favorite color: ${fullBio.favColor}
+
+`
+        + `Respond with this JSON structure:
+`
+        + JSON.stringify({
+            personality: "3-5 sentence description",
+            backstory: "short origin story",
+            quirks: "unique mannerisms",
+            aspirations: "goals and dreams"
+          }, null, 2);
+
+      const response = await getLLMResponse({
+        prompt,
+        model: 'gpt-4',
+        format: 'json'
+      });
+
+      if (response?.data) {
+        try {
+          const bioData = JSON.parse(response.data);
+          if (bioData && typeof bioData === 'object') {
+            setBioTraits(bioData);
+            const newGeneratedBio = 
+              `PERSONALITY: ${bioData.personality}\n\n` +
+              `BACKSTORY: ${bioData.backstory}\n\n` +
+              `QUIRKS: ${bioData.quirks}\n\n` +
+              `ASPIRATIONS: ${bioData.aspirations}`;
+            
+            setGeneratedBio(newGeneratedBio);
+            saveToStorage(`character-bio-${templateInfo.id}`, {
+              traits: bioData,
+              fullBio: newGeneratedBio
+            });
+          }
+        } catch (parseError) {
+          console.error('Failed to parse bio response:', parseError);
+          setGeneratedBio('Error: Could not generate bio. Please try again.');
+        }
+      }
+    } catch (error) {
+      console.error('Bio generation failed:', error);
+      setGeneratedBio('Error: Bio generation failed. Please check your connection.');
+    } finally {
+      setIsGeneratingBio(false);
+    }
+  };
+
+  const handleExportBio = () => {
+    if (!generatedBio) return;
+    
+    const exportData = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      characterId: templateInfo.id,
+      traits: bioTraits,
+      fullBio: generatedBio
+    };
+    
+    return JSON.stringify(exportData, null, 2);
+  };
+
+  const handleImportBio = (importString) => {
+    try {
+      const data = JSON.parse(importString);
+      if (data && data.traits && data.fullBio) {
+        setBioTraits(data.traits);
+        setGeneratedBio(data.fullBio);
+        saveToStorage(`character-bio-${templateInfo.id}`, {
+          traits: data.traits,
+          fullBio: data.fullBio
+        });
+        return true;
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+    }
+    return false;
+  };
 
   return (
     <div className={styles.container}>
@@ -548,6 +671,131 @@ export const BioPage = ({ templateInfo, personality }) => {
             >
               Preview Voice
             </button>
+          </div>
+        </div>
+      )}
+      {generatedBio && (
+        <div className={styles.bioContainer}>
+          <h3>{fullBio.name}&apos;s Generated Bio</h3>
+          <pre className={styles.bioText}>{generatedBio}</pre>
+          
+          {/* Personality breakdown */}
+          <div className={styles.personalityGrid}>
+            {Object.entries(bioTraits).map(([trait, value]) => (
+              <div key={trait} className={styles.traitCard}>
+                <h4>{trait.toUpperCase()}</h4>
+                <p>{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className={styles.buttonGroup}>
+        <CustomButton 
+          onClick={() => setShowSaveConfirm(true)}
+          disabled={!generatedBio}
+        >
+          Save Bio
+        </CustomButton>
+        
+        <CustomButton 
+          onClick={() => setShowLoadConfirm(true)}
+          disabled={!templateInfo.id}
+        >
+          Load Bio
+        </CustomButton>
+        
+        <CustomButton 
+          onClick={() => setShowExportDialog(true)}
+          disabled={!generatedBio}
+        >
+          Export Bio
+        </CustomButton>
+        
+        <CustomButton 
+          onClick={() => setShowImportDialog(true)}
+        >
+          Import Bio
+        </CustomButton>
+      </div>
+      {showSaveConfirm && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h3>Confirm Save</h3>
+            <p>Overwrite existing saved bio for this character?</p>
+            <div className={styles.modalButtons}>
+              <CustomButton onClick={() => {
+                saveToStorage(`character-bio-${templateInfo.id}`, {
+                  traits: bioTraits,
+                  fullBio: generatedBio
+                });
+                setShowSaveConfirm(false);
+              }}>Confirm</CustomButton>
+              <CustomButton onClick={() => setShowSaveConfirm(false)}>Cancel</CustomButton>
+            </div>
+          </div>
+        </div>
+      )}
+      {showLoadConfirm && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h3>Confirm Load</h3>
+            <p>This will replace your current bio. Continue?</p>
+            <div className={styles.modalButtons}>
+              <CustomButton onClick={() => {
+                const savedBio = loadFromStorage(`character-bio-${templateInfo.id}`);
+                if (savedBio) {
+                  setBioTraits(savedBio.traits);
+                  setGeneratedBio(savedBio.fullBio);
+                }
+                setShowLoadConfirm(false);
+              }}>Confirm</CustomButton>
+              <CustomButton onClick={() => setShowLoadConfirm(false)}>Cancel</CustomButton>
+            </div>
+          </div>
+        </div>
+      )}
+      {showExportDialog && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h3>Export Bio</h3>
+            <textarea 
+              className={styles.exportArea}
+              value={handleExportBio()}
+              readOnly
+            />
+            <div className={styles.modalButtons}>
+              <CustomButton onClick={() => {
+                navigator.clipboard.writeText(handleExportBio());
+                setShowExportDialog(false);
+              }}>Copy to Clipboard</CustomButton>
+              <CustomButton onClick={() => setShowExportDialog(false)}>Close</CustomButton>
+            </div>
+          </div>
+        </div>
+      )}
+      {showImportDialog && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h3>Import Bio</h3>
+            <textarea 
+              className={styles.exportArea}
+              value={importData}
+              onChange={(e) => setImportData(e.target.value)}
+              placeholder="Paste exported bio data here"
+            />
+            <div className={styles.modalButtons}>
+              <CustomButton onClick={() => {
+                if (handleImportBio(importData)) {
+                  setShowImportDialog(false);
+                  setImportData('');
+                }
+              }}>Import</CustomButton>
+              <CustomButton onClick={() => {
+                setShowImportDialog(false);
+                setImportData('');
+              }}>Cancel</CustomButton>
+            </div>
           </div>
         </div>
       )}
