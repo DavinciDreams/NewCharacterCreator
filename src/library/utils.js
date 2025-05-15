@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
-import { Buffer } from "buffer";
 import html2canvas from "html2canvas";
 import VRMExporter from "./VRMExporter";
 import { CullHiddenFaces } from './cull-mesh.js';
@@ -8,7 +7,6 @@ import { combine } from "./merge-geometry";
 import { VRMLoaderPlugin } from "@pixiv/three-vrm"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { VRMHumanBoneName, VRMHumanBoneParentMap } from "@pixiv/three-vrm";
-import { initScene } from '../utils/threeUtils';
 
 export function getAsArray(target) {
   if (target == null) return []
@@ -76,20 +74,20 @@ export async function getModelFromScene(avatarScene, format = 'glb', skinColor =
       truncateDrawRange: true,
       binary: true,
       forcePowerOfTwoTextures: false,
-      maxTextureSize: 1024 || Infinity
+      maxTextureSize: 1024 || Number.POSITIVE_INFINITY
     };
 
     const avatar = await combine({ transparentColor: skinColor, avatar: avatarScene });
 
     const glb = await new Promise((resolve) => exporter.parse(avatar, resolve, (error) => console.error("Error getting model", error), options));
     return new Blob([glb], { type: 'model/gltf-binary' });
-  } else if (format && format === 'vrm') {
+  } 
+  if (format && format === 'vrm') {
     const exporter = new VRMExporter();
     const vrm = await new Promise((resolve) => exporter.parse(avatarScene, resolve));
     return new Blob([vrm], { type: 'model/gltf-binary' });
-  } else {
-    return console.error("Invalid format");
   }
+  console.error("Invalid format");
 }
 
 export async function getScreenShot(elementId, delay = 0) {
@@ -98,26 +96,30 @@ export async function getScreenShot(elementId, delay = 0) {
 }
 
 export async function getCroppedScreenshot(elementId, posX, posY, width, height, debug = false){
+  let dataURL;
+  let newdataurl;
+  let base64Data;
+  let i;
   const snapShotElement = document.getElementById(elementId);
-  return await html2canvas(snapShotElement).then(async function (canvas) {
+  return await html2canvas(snapShotElement).then(async (canvas) => {
 
-    var dataURL = canvas.toDataURL("image/jpeg", 1.0);
+    const dataURL = canvas.toDataURL("image/jpeg", 1.0);
 
     const tempcanvas = document.createElement("canvas");
     tempcanvas.width = width;
     tempcanvas.height = height;
     const tempctx = tempcanvas.getContext("2d");
 
-    let image = new Image();
+    const image = new Image();
     image.src = dataURL;
 
     await tempctx.drawImage(canvas, posX, posY, width, height, 0,0, width, height)
 
-    var newdataurl = tempcanvas.toDataURL("image/jpeg", 1.0);
-    const base64Data = Buffer.from(
-      newdataurl.replace(/^data:image\/\w+;base64,/, ""),
-      "base64"
-    );
+    newdataurl = tempcanvas.toDataURL("image/jpeg", 1.0);
+    base64Data = new Uint8Array(newdataurl.replace(/^data:image\/\w+;base64,/, "").length);
+    for (i = 0; i < base64Data.length; i++) {
+      base64Data[i] = newdataurl.charCodeAt(i);
+    }
 
 
     const blob = new Blob([base64Data], { type: "image/jpeg" });
@@ -138,9 +140,9 @@ export async function getCroppedScreenshot(elementId, posX, posY, width, height,
 async function getScreenShotByElementId(id) {
 
   const snapShotElement = document.getElementById(id);
-  return await html2canvas(snapShotElement).then(async function (canvas) {
+  return await html2canvas(snapShotElement).then(async (canvas) => {
 
-    var dataURL = canvas.toDataURL("image/jpeg", 1.0);
+    const dataURL = canvas.toDataURL("image/jpeg", 1.0);
     // const base64Data = Buffer.from(
     //   dataURL.replace(/^data:image\/\w+;base64,/, ""),
     //   "base64"
@@ -157,11 +159,11 @@ async function getScreenShotByElementId(id) {
     //const ctx = canvas.getContext("2d")
     await tempctx.drawImage(canvas, 500, 100, 256, 256, 0,0, 256, 256)
 
-    var newdataurl = tempcanvas.toDataURL("image/jpeg", 1.0);
-    const base64Data = Buffer.from(
-      newdataurl.replace(/^data:image\/\w+;base64,/, ""),
-      "base64"
-    );
+    const newdataurl = tempcanvas.toDataURL("image/jpeg", 1.0);
+    const base64Data = new Uint8Array(newdataurl.replace(/^data:image\/\w+;base64,/, "").length);
+    for (let i = 0; i < base64Data.length; i++) {
+      base64Data[i] = newdataurl.charCodeAt(i);
+    }
 
 
     const blob = new Blob([base64Data], { type: "image/jpeg" });
@@ -176,20 +178,23 @@ async function getScreenShotByElementId(id) {
     return blob;
   });
 }
-function createSpecifiedImage(ctx){
-  const context = createContext(256,256);
-  const imageData = ctx.getImageData(left, top, width, height);
-  const arr = new ImageData(imageData, xTileSize, yTileSize);
-  const tempcanvas = document.createElement("canvas");
-  tempcanvas.width = xTileSize;
-  tempcanvas.height = yTileSize;
-  const tempctx = tempcanvas.getContext("2d");
 
-  tempctx.putImageData(arr, 0, 0);
-  tempctx.save();
-  // draw tempctx onto context
-  context.drawImage(tempcanvas, min.x * ATLAS_SIZE_PX, min.y * ATLAS_SIZE_PX, xTileSize, yTileSize);
-
+export function createAvatarWithBio(avatarElement, bioText) {
+  // Create canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  
+  // Draw avatar
+  ctx.drawImage(avatarElement, 0, 0, 512, 384);
+  
+  // Add bio text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '16px Arial';
+  ctx.fillText(bioText, 20, 420);
+  
+  return canvas.toDataURL('image/png');
 }
 
 function createContext({ width, height }) {
@@ -279,8 +284,10 @@ export const createFaceNormals = (geometry) => {
   const pos = geometry.attributes.position;
   const idx = geometry.index;
 
-  const tri = new THREE.Triangle(); // for re-use
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(); // for re-use
+  const tri = new THREE.Triangle();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
 
   const faceNormals = [];
 
@@ -495,31 +502,6 @@ function getVRMMeta(name){
   }
 }
 
-// function getVRMDefaultLookAt(){
-//   return {
-//     offsetFromHeadBone:[0,0,0],
-//     applier:{
-//       rangeMapHorizontalInner:{
-//         inputMaxValue:90,
-//         inputSacle:62.1
-//       },
-//       rangeMapHorizontalOuter:{
-//         inputMaxValue:90,
-//         inputSacle:68.6
-//       },
-//       rangeMapVerticalDown:{
-//         inputMaxValue:90,
-//         inputSacle:57.9
-//       },
-//       rangeMapVerticalUp:{
-//         inputMaxValue:90,
-//         inputSacle:52.8
-//       }
-//     },
-//     type:"bone"
-//   }
-
-// }
 function getHumanoidByBoneNames(skinnedMesh){
   const humanBones = {}
   skinnedMesh.skeleton.bones.map((bone)=>{
@@ -540,9 +522,9 @@ function traverseWithDepth({ object3D, depth = 0, callback, result }) {
     }
     return result;
 }
-const describe = (function () {
+const describe = (() => {
     const prefix = "  ";
-    return function describe(object3D, indentation) {
+    return (object3D, indentation) => {
         const description = `${object3D.type} | ${object3D.name} | ${JSON.stringify(object3D.userData)}`;
         let firstBone = "";
         if (object3D.type === "SkinnedMesh") {

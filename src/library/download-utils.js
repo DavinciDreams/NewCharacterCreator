@@ -4,7 +4,7 @@ import { cloneSkeleton, combine } from "./merge-geometry"
 import { getAvatarData } from "./utils"
 import VRMExporter from "./VRMExporter"
 import VRMExporterv0 from "./VRMExporterv0"
-
+import JSZip from 'jszip';
 
 function cloneAvatarModel (avatarToClone){
     const clone = avatarToClone.clone()
@@ -108,23 +108,33 @@ export async function downloadVRM(avatarToDownload, avatar, fileName = "", atlas
     saveArrayBuffer(vrm, `${downloadFileName}.vrm`)
   })
 }
-export async function downloadGLB(avatarToDownload,  optimized = true, fileName = "", atlasSize  = 4096){
-  const downloadFileName = `${
-    fileName && fileName !== "" ? fileName : "AvatarCreatorModel"
-  }`
-
-  //const data =await getGLBData(avatarToDownload,atlasSize, optimized);
-  //console.log('data',data)
-  getGLBData(avatarToDownload,atlasSize, optimized)
-    .then((result) => {
-      if (result instanceof ArrayBuffer) {
-        saveArrayBuffer(result, `${downloadFileName}.glb`)
-      } else {
-        const output = JSON.stringify(result, null, 2)
-        saveString(output, `${downloadFileName}.gltf`)
-      }
-    })
-
+export async function downloadGLB(avatarToDownload, optimized = true, fileName = "", atlasSize = 4096, bioData = null) {
+  const blob = await getGLBBlobData(avatarToDownload, atlasSize, optimized);
+  
+  // If bio data exists, create a zip with both model and bio
+  if (bioData) {
+    const zip = new JSZip();
+    zip.file(`${fileName}.glb`, blob);
+    
+    // Add bio metadata
+    const bioJson = {
+      text: bioData.fullBio || '',
+      traits: bioData.traits || {},
+      image: bioData.image || ''
+    };
+    zip.file('bio.json', JSON.stringify(bioJson));
+    
+    // Add avatar with bio image if available
+    if (bioData.image) {
+      const imgBlob = await fetch(bioData.image).then(r => r.blob());
+      zip.file('avatar_with_bio.png', imgBlob);
+    }
+    
+    const zipBlob = await zip.generateAsync({type: 'blob'});
+    save(zipBlob, `${fileName}_with_bio.zip`);
+  } else {
+    save(blob, `${fileName}.glb`);
+  }
 }
 
 function parseGLB (glbModel){

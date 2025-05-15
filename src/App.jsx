@@ -8,6 +8,7 @@ import { LanguageContext } from "./context/LanguageContext"
 import { ViewMode, ViewContext } from "./context/ViewContext"
 import { AudioContext, AudioProvider } from "./context/AudioContext"
 import { LLMProvider } from "./context/LLMContext"
+import { BioProvider } from "./context/BioContext"
 
 import { getAsArray } from "./library/utils"
 import { BlinkManager } from "./library/blinkManager"
@@ -143,7 +144,8 @@ const fetchData = () => {
     read() {
       if (status === "error") {
         throw result
-      } else if (status === "success") {
+      }
+      if (status === "success") {
         return result
       }
       throw suspender
@@ -342,31 +344,33 @@ export default function App() {
     <LanguageContext.Provider value={languageContextValue}>
       <LLMProvider>
         <AudioProvider>
-          <ViewContext.Provider value={viewContextValue}>
-            <SceneContext.Provider value={sceneContextValue}>
-              <Fragment>
-                <div className="generalTitle">Character Studio</div>
+          <BioProvider>
+            <ViewContext.Provider value={viewContextValue}>
+              <SceneContext.Provider value={sceneContextValue}>
+                <Fragment>
+                  <div className="generalTitle">Character Studio</div>
 
-                <LanguageSwitch />
-                <MessageWindow
-                  confirmDialogText = {confirmDialogText}
-                  confirmDialogCallback = {confirmDialogCallback}
-                  confirmDialogWindow = {confirmDialogWindow}
-                  setConfirmDialogWindow = {setConfirmDialogWindow}
-                />
-                <Background />
-                
-                <Scene
-                  manifest={manifest}
-                  sceneModel={sceneModel}
-                  lookatManager={lookatManager}
-                />
-                
-                {pages[viewMode]}
-                
-              </Fragment>
-            </SceneContext.Provider>
-          </ViewContext.Provider>
+                  <LanguageSwitch />
+                  <MessageWindow
+                    confirmDialogText = {confirmDialogText}
+                    confirmDialogCallback = {confirmDialogCallback}
+                    confirmDialogWindow = {confirmDialogWindow}
+                    setConfirmDialogWindow = {setConfirmDialogWindow}
+                  />
+                  <Background />
+                  
+                  <Scene
+                    manifest={manifest}
+                    sceneModel={sceneModel}
+                    lookatManager={lookatManager}
+                  />
+                  
+                  {pages[viewMode]}
+                  
+                </Fragment>
+              </SceneContext.Provider>
+            </ViewContext.Provider>
+          </BioProvider>
         </AudioProvider>
       </LLMProvider>
     </LanguageContext.Provider>

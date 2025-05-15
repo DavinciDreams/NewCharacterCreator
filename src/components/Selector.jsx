@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useState, useCallback } from "react"
 import * as THREE from "three"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { VRMLoaderPlugin } from "@pixiv/three-vrm"
-import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from 'three-mesh-bvh';
 
 import {
   addModelData,
@@ -10,7 +10,8 @@ import {
   renameVRMBones,
   createFaceNormals,
   createBoneDirection,
-  getAsArray
+  getAsArray,
+  cullHiddenMeshes
 } from "../library/utils"
 import { LipSync } from '../library/lipsync'
 
@@ -72,13 +73,7 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
     }
   }, [templateInfo.id]);
 
-  useEffect(() => {
-    setRestrictions(getRestrictions());
-
-  },[templateInfo])
-
-  const getRestrictions = () => {
-
+  const getRestrictions = useCallback(() => {
     const traitRestrictions = templateInfo.traitRestrictions
     const typeRestrictions = {};
 
@@ -136,7 +131,15 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
       traitRestrictions,
       typeRestrictions
     }
-  }
+  }, [templateInfo]);
+
+  useEffect(() => {
+    try {
+      setRestrictions(getRestrictions());
+    } catch (error) {
+      console.error('Failed to get restrictions:', error);
+    }
+  },[templateInfo, getRestrictions])
 
   const loadSelectedOptions = (opts) => {
     loadOptions(opts).then((loadedData)=>{
@@ -181,8 +184,8 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
     const option = {
       
       item:{
-        id:"custom_" + currentTraitName,
-        name:"Custom " + currentTraitName,
+        id:`custom_${currentTraitName}`,
+        name:`Custom ${currentTraitName}`,
         directory:url
       },
       trait:templateInfo.traits.find((t) => t.name === currentTraitName)
@@ -224,12 +227,12 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
   }
 
   const uploadTrait = async() =>{
-      var input = document.createElement('input');
+      const input = document.createElement('input');
       input.type = 'file';
       input.accept=".vrm"
 
       input.onchange = e => { 
-        var file = e.target.files[0]; 
+        const file = e.target.files[0]; 
         if (file.name.endsWith(".vrm")){
           loadCustom(file)
         }
@@ -241,30 +244,29 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
     const addOption  = option != null
     if (isLoading) return;
 
-    if (option == null){
-      option = {
-        item:null,
-        trait:templateInfo.traits.find((t) => t.name === currentTraitName)
-      }
-    }
-    else {
-      if (currentTrait.get(option.trait.trait) === option.key) {
+    const selectedOption = option == null ? {
+      item:null,
+      trait:templateInfo.traits.find((t) => t.name === currentTraitName)
+    } : option;
+    
+    if (selectedOption.trait.trait === currentTraitName) {
+      if (currentTrait.get(selectedOption.trait.trait) === selectedOption.key) {
         return;
       }
     }
     
-    if (option.avatarIndex != null){
-      if(isNewClass(option.avatarIndex)){
-        selectClass(option.avatarIndex)
+    if (selectedOption.avatarIndex != null){
+      if(isNewClass(selectedOption.avatarIndex)){
+        selectClass(selectedOption.avatarIndex)
       }
       return
     }
 
     effectManager.setTransitionEffect('switch_item');
 
-    option.selected = true
+    selectedOption.selected = true
 
-    loadOptions(getAsArray(option),addOption).then((loadedData)=>{
+    loadOptions(getAsArray(selectedOption),addOption).then((loadedData)=>{
       let newAvatar = {};
       loadedData.map((data)=>{
         newAvatar = {...newAvatar, ...itemAssign(data)}
@@ -292,22 +294,21 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
     }
     // filter options by restrictions
 
-    if (filterRestrictions)
-      options = filterRestrictedOptions(options);
+    const filteredOptions = filterRestrictions ? filterRestrictedOptions(options) : options;
 
     //save selection to local storage
     if (saveUserSel)
-      saveUserSelection(templateInfo.name, options)
+      saveUserSelection(templateInfo.name, filteredOptions)
 
     // validate if there is at least a non null option
     let nullOptions = true;
-    options.map((option)=>{
+    filteredOptions.map((option)=>{
       if(option.item != null)
         nullOptions = false;
     })
     if (nullOptions === true){
       return new Promise((resolve) => {
-        resolve(options)
+        resolve(filteredOptions)
       });
     }
 
@@ -324,7 +325,7 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
 
     // and a texture loaders for all the textures
     const textureLoader = new THREE.TextureLoader(loadingManager)
-    loadingManager.onProgress = function(url, loaded, total){
+    loadingManager.onProgress = (url, loaded, total) => {
       setLoadPercentage(Math.round(loaded/total * 100 ))
     }
     // return a promise, resolve = once everything is loaded
@@ -332,22 +333,22 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
 
       // resultData will hold all the results in the array that was given this function
       const resultData = [];
-      loadingManager.onLoad = function (){
+      loadingManager.onLoad = () => {
         setLoadPercentage(0)
         resolve(resultData);
         setIsLoading(false)
       };
-      loadingManager.onError = function (url){
-        console.warn("error loading " + url)
+      loadingManager.onError = (url) => {
+        console.warn(`error loading ${url}`)
       }
-      loadingManager.onProgress = function(url, loaded, total){
+      loadingManager.onProgress = (url, loaded, total) => {
         setLoadPercentage(Math.round(loaded/total * 100 ))
       }
 
       const baseDir = useTemplateBaseDirectory ? templateInfo.traitsDirectory : ""// (maybe set in loading manager)
 
       // load necesary assets for the options
-      options.map((option, index)=>{
+      filteredOptions.map((option, index)=>{
         if (option.selected){
           setSelectValue(option.key)
         }
@@ -424,7 +425,7 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
     }
 
     // now update uptions
-    removeTraits.forEach(trait => {
+    for (const trait of removeTraits) {
       let removed = false;
       updateCurrentTraitMap(trait, null);
       
@@ -446,7 +447,7 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
           trait:templateInfo.traits.find((t) => t.name === trait)
         })
       }
-    });
+    }
    
     return options;
   }
@@ -569,7 +570,7 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
         maxCullingDistance:
           item.maxCullingDistance != null ? item.maxCullingDistance: 
           traitData.maxCullingDistance != null ? traitData.maxCullingDistance:
-          templateInfo.maxCullingDistance != null ? templateInfo.maxCullingDistance: Infinity,
+          templateInfo.maxCullingDistance != null ? templateInfo.maxCullingDistance: Number.POSITIVE_INFINITY,
         cullingMeshes
       })  
     })
@@ -641,7 +642,7 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
         textureInfo: textureItem,
         colorInfo: colorItem,
         name: item.name,
-        model: vrm && vrm.scene,
+        model: vrm?.scene,
         vrm: vrm,
       }
     }
@@ -653,9 +654,9 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
   function TraitTitle(props) {
     return (
       props.title && (
-        <div className={styles["traitTitleWrap"]}>
-          <div className={styles["topLine"]} />
-          <div className={styles["traitTitle"]}>{props.title}</div>
+        <div className={styles.traitTitleWrap}>
+          <div className={styles.topLine} />
+          <div className={styles.traitTitle}>{props.title}</div>
         </div>
       )
     )
@@ -663,16 +664,22 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
 
   function ClearTraitButton() {
     // clear the current trait
-    const isSelected = currentTrait.get(currentTraitName) ? true : false;
+    const isSelected = currentTrait.get(currentTraitName);
     return removeOption ? (
-      <div
+      <button
+        type="button"
         key={"no-trait"}
-        className={`${styles["selectorButton"]} ${styles["selector-button"]} ${
-          !currentTraitName ? styles["active"] : ""
-        }`}
+        className={`${styles.selectorButton} ${styles.selectorButton} ${!currentTraitName ? styles.active : ""}`}
         onClick={() => {
           if (effectManager.getTransitionEffect('normal')) {
             selectTraitOption(null) 
+            setSelectValue("")
+            effectManager.setTransitionEffect('normal');
+          }
+        }}
+        onKeyDown={(e) => {
+          if (['Enter', 'Space'].includes(e.code) && effectManager.getTransitionEffect('normal')) {
+            selectTraitOption(null)
             setSelectValue("")
             effectManager.setTransitionEffect('normal');
           }
@@ -686,7 +693,7 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
           icon={cancel}
           rarity={!isSelected ? "mythic" : "none"}
         />
-      </div>
+      </button>
     ) : (
       <></>
     )
@@ -695,12 +702,12 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
   return (
     !!currentTraitName && (
       
-      <div className={styles["SelectorContainerPos"]}>
+      <div className={styles.SelectorContainerPos}>
        
         <TraitTitle title={t(`editor.${currentTraitName}`)} />
-        <div className={styles["bottomLine"]} />
-        <div className={styles["scrollContainer"]}>
-          <div className={styles["selector-container"]}>
+        <div className={styles.bottomLine} />
+        <div className={styles.scrollContainer}>
+          <div className={styles.selectorContainer}>
             <ClearTraitButton />
             {currentOptions.map((option) => {
               let active = option.key === selectValue
@@ -711,17 +718,23 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
                 active = currentTrait.get(option.trait.trait) === option.key;
               }
               return (
-                <div
+                <button
+                  type="button"
                   key={option.key}
-                  className={`${styles["selectorButton"]} ${
-                    styles["selector-button"]
-                  } ${active ? styles["active"] : ""}`}
+                  className={`${styles.selectorButton} ${styles.selectorButton} ${active ? styles.active : ""}`}
                   onClick={() => {
                     if (effectManager.getTransitionEffect('normal')){
                       selectTraitOption(option)
                       setLoadPercentage(1)
                     }
                   }}
+                  onKeyDown={(e) => {
+                    if (['Enter', 'Space'].includes(e.code) && effectManager.getTransitionEffect('normal')) {
+                      selectTraitOption(option)
+                      setLoadPercentage(1)
+                    }
+                  }}
+                  tabIndex="0"
                 >
                   <TokenBox
                     size={56}
@@ -732,43 +745,38 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
                     style={
                       option.iconHSL
                         ? {
-                            filter:
-                              "brightness(" +
-                              (option.iconHSL.l + 0.5) +
-                              ") hue-rotate(" +
-                              option.iconHSL.h * 360 +
-                              "deg) saturate(" +
-                              option.iconHSL.s * 100 +
-                              "%)",
+                            filter: `brightness(${option.iconHSL.l + 0.5}) hue-rotate(${option.iconHSL.h * 360}deg) saturate(${option.iconHSL.s * 100}%)`,
                           }
                         : {}
                     }
                   />
                   <img
                     src={tick}
+                    alt={avatar[currentTraitName] && avatar[currentTraitName].id === option.item.id ? 'Selected' : 'Not selected'}
                     className={
                       avatar[currentTraitName] &&
                       avatar[currentTraitName].id === option.item.id // todo (pending fix): this only considers the item id and not the subtraits id
-                        ? styles["tickStyle"]
-                        : styles["tickStyleInActive"]
+                        ? styles.tickStyle
+                        : styles.tickStyleInActive
                     }
                   />
                   {/*{active && loadPercentage > 0 && loadPercentage < 100 && (
                     // TODO: Fill up background from bottom as loadPercentage increases
                   )}*/}
-                </div>
+                </button>
               )
             })}
           </div>
         </div>
-        <div className={styles["uploadContainer"]}>
+        <div className={styles.uploadContainer}>
           
-          <div 
-            className={styles["uploadButton"]}
+          <button 
+            type="button"
+            className={styles.uploadButton}
             onClick={() => {promptUpload()}}>
             <div> 
               Upload </div>
-          </div>
+          </button>
           
         </div>
       </div>

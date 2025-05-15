@@ -1,22 +1,20 @@
 import React, { useContext } from "react"
 import { SceneContext } from "../context/SceneContext"
 import CustomButton from "./custom-button"
-
 import { downloadGLB, downloadVRM } from "../library/download-utils"
-
-import styles from "./ExportMenu.module.css"
+import { BioContext } from "../context/BioContext"
 import { LanguageContext } from "../context/LanguageContext"
 
-const defaultName = "Anon"
+import styles from "./ExportMenu.module.css"
 
-export const ExportMenu = () => {
+export default function ExportMenu({ name = "" }) {
   // Translate hook
   const { t } = useContext(LanguageContext);
-  const [name] = React.useState(localStorage.getItem("name") || defaultName)
   const { model, avatar } = useContext(SceneContext)
-
+  const { bioData } = useContext(BioContext)
+  
   return (
-    <React.Fragment>
+    <div className={styles.container}>
       <CustomButton
         theme="light"
         text="GLB"
@@ -24,7 +22,7 @@ export const ExportMenu = () => {
         size={14}
         className={styles.button}
         onClick={() => {
-          downloadGLB(model, true, name)
+          downloadGLB(model, true, name, 4096, bioData)
         }}
       />
       <CustomButton
@@ -34,7 +32,7 @@ export const ExportMenu = () => {
         size={14}
         className={styles.button}
         onClick={() => {
-          downloadGLB(model, false, name)
+          downloadGLB(model, false, name, 4096, bioData)
         }}
       />
       <CustomButton
@@ -44,9 +42,9 @@ export const ExportMenu = () => {
         size={14}
         className={styles.button}
         onClick={() => {
-          downloadVRM(model, avatar, name, 4096, true)
+          downloadVRM(model, avatar, name, 4096, true, bioData)
         }}
       />
-    </React.Fragment>
+    </div>
   )
 }

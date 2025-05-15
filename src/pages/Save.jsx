@@ -1,6 +1,6 @@
 import React, { useContext } from "react"
 import styles from "./Save.module.css"
-import { ExportMenu } from "../components/ExportMenu"
+import ExportMenu from "../components/ExportMenu"
 
 import { ViewMode, ViewContext } from "../context/ViewContext"
 import CustomButton from "../components/custom-button"

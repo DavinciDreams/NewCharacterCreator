@@ -10,6 +10,8 @@ import { AudioContext } from "../context/AudioContext"
 import { LLMContext } from "../context/LLMContext"
 import { getLLMResponse } from "../lib/chat"
 import { Brain } from 'lucide-react';
+import { useBio } from "../context/BioContext";
+import { createAvatarWithBio } from "../library/utils";
 
 export const getBio = (templateInfo, personality) => {
   const classType = templateInfo.name.toUpperCase();
@@ -40,6 +42,8 @@ export const getBio = (templateInfo, personality) => {
   const q2 = getRelationshipQuestionsAndAnswers(personality);
   const q3 = getHobbyQuestionsAndAnswers(personality);
 
+  const { setBioData } = useBio();
+
   const fullBio = {
     name,
     classType,
@@ -56,6 +60,19 @@ export const getBio = (templateInfo, personality) => {
     description,
     greeting:"Hello"
   }
+
+  setBioData({
+    traits: {
+      name,
+      class: personality.classes[classType],
+      city,
+      weapon,
+      hobby,
+      profession,
+      favoriteColor: favColor
+    },
+    fullBio: description
+  });
 
   return fullBio
 }
@@ -303,17 +320,19 @@ const BioPage = ({ templateInfo, personality }) => {
   };
 
   const handleExportBio = () => {
-    if (!generatedBio) return;
+    const avatarElement = document.getElementById('avatar-preview');
+    const bioText = generatedBio || fullBio.description;
     
-    const exportData = {
-      version: 1,
-      timestamp: new Date().toISOString(),
-      characterId: templateInfo.id,
-      traits: bioTraits,
-      fullBio: generatedBio
-    };
-    
-    return JSON.stringify(exportData, null, 2);
+    if (avatarElement && bioText) {
+      createAvatarWithBio(avatarElement, bioText)
+        .then(canvas => {
+          // Convert canvas to image and download
+          const link = document.createElement('a');
+          link.download = `${fullBio.name}-bio.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        });
+    }
   };
 
   const handleImportBio = (importString) => {
