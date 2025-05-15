@@ -1,7 +1,5 @@
 // src/utils/threeUtils.js
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 export function initScene(container) {
   const scene = new THREE.Scene();
@@ -10,33 +8,4 @@ export function initScene(container) {
   renderer.setSize(container.clientWidth, container.clientHeight);
   container.appendChild(renderer.domElement);
   return { scene, camera, renderer };
-}
-
-export function loadModel(url) {
-  const loader = new GLTFLoader();
-  return new Promise((resolve, reject) => {
-    loader.load(url, resolve, undefined, reject);
-  });
-}
-
-export function cullHiddenMeshes(scene) {
-  scene.traverse((obj) => {
-    if (obj.isMesh) {
-      obj.frustumCulled = true;
-      // Add any additional visibility/culling logic here
-    }
-  });
-}
-
-export function SAH() {
-  return {
-    // Surface Area Heuristic parameters for BVH
-    splitStrategy: 'SAH',
-    verbose: true,
-    maxDepth: 40,
-    maxLeafTris: 10,
-    ...computeBoundsTree,
-    ...disposeBoundsTree,
-    ...acceleratedRaycast
-  };
 }
