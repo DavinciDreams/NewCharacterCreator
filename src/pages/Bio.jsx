@@ -9,6 +9,7 @@ import { SoundContext } from "../context/SoundContext"
 import { AudioContext } from "../context/AudioContext"
 import { LLMContext } from "../context/LLMContext"
 import { getLLMResponse } from "../lib/chat"
+import { Brain } from 'lucide-react';
 
 export const getBio = (templateInfo, personality) => {
   const classType = templateInfo.name.toUpperCase();
@@ -93,11 +94,15 @@ function loadBioFromStorage(itemName){
   return null
 }
 
+function saveBioToStorage(itemName, fullBio){
+  localStorage.setItem(itemName, JSON.stringify(fullBio))
+}
+
 export const BioPage = ({ templateInfo, personality }) => {
   const { playSound } = useContext(SoundContext)
   const { isMute, speak } = useContext(AudioContext)
   const { setViewMode } = useContext(ViewContext)
-  const { apiKey, queryLLM } = useContext(LLMContext)
+  const { apiKey, queryLLM, AVAILABLE_MODELS, DEFAULT_MODEL } = useContext(LLMContext)
   
   const [fullBio, setFullBio] = React.useState(
     loadBioFromStorage(`${templateInfo.id}_fulBio`)
@@ -109,6 +114,25 @@ export const BioPage = ({ templateInfo, personality }) => {
   const [userInput, setUserInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(null);
+  const [activeTab, setActiveTab] = useState('chat');
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
+
+  useEffect(() => {
+    if (templateInfo.id) {
+      const loadedBio = loadBioFromStorage(templateInfo.id);
+      if (loadedBio) {
+        setFullBio(loadedBio);
+      } else {
+        setFullBio(getBio(templateInfo, personality));
+      }
+    }
+  }, [templateInfo.id, templateInfo, personality]);
+
+  useEffect(() => {
+    if (fullBio.name) {
+      saveBioToStorage(templateInfo.id, fullBio);
+    }
+  }, [fullBio, templateInfo.id]);
 
   useEffect(() => {
     if (fullBio?.id) {
@@ -142,7 +166,7 @@ export const BioPage = ({ templateInfo, personality }) => {
       
       const response = await getLLMResponse({
         messages: [...chatMessages, newMessage],
-        llmContext: { queryLLM },
+        llmContext: { queryLLM, selectedModel },
         audioContext: { isMute, speak },
         options: {
           system: `You are ${characterContext.name}. ${characterContext.description}`
@@ -170,11 +194,6 @@ export const BioPage = ({ templateInfo, personality }) => {
     setViewMode(ViewMode.SAVE)
     !isMute && playSound('backNextButton');
   }
-
-  React.useEffect(() => {
-    localStorage.setItem(`${templateInfo.id}_fulBio`, JSON.stringify(fullBio))
-  }, [fullBio])
-
 
   // if user presses ctrl c, clear the messages
   useEffect(() => {
@@ -232,13 +251,11 @@ export const BioPage = ({ templateInfo, personality }) => {
                 defaultValue={fullBio.voiceKey}
                 onChange={(e) => setFullBio({...fullBio, ...{voiceKey:e.target.value}})}
               >
-                {voiceKeys.map((option, i) => {
-                  return (
-                    <option key={i} value={option}>
-                      {option}
-                    </option>
-                  )
-                })}
+                {voiceKeys.map((voiceKey) => (
+                  <option key={`voice-${voiceKey}`} value={voiceKey}>
+                    {voiceKey.replace(/([A-Z])/g, ' $1').trim()}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -256,13 +273,11 @@ export const BioPage = ({ templateInfo, personality }) => {
                 defaultValue={fullBio.favColor}
                 onChange={(e) => setFullBio({...fullBio, ...{favColor:e.target.value}})}
               >
-                {colorKeys.map((option, i) => {
-                  return (
-                    <option key={i} value={option}>
-                      {option.charAt(0).toUpperCase() + option.slice(1)}
-                    </option>
-                  )
-                })}
+                {colorKeys.map((colorKey) => (
+                  <option key={`color-${colorKey}`} value={colorKey}>
+                    {colorKey.replace(/([A-Z])/g, ' $1').trim()}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -316,13 +331,11 @@ export const BioPage = ({ templateInfo, personality }) => {
                     }
                   }})}
               >
-                {personality.generalPersonalityQuestions.map((question, i) => {
-                  return (
-                    <option key={i} value={question}>
-                      {question}
-                    </option>
-                  )
-                })}
+                {personality.generalPersonalityQuestions.map((q) => (
+                  <option key={`personality-${q}`} value={q}>
+                    {q}
+                  </option>
+                ))}
               </select>
               <textarea
                 name="response1"
@@ -358,13 +371,11 @@ export const BioPage = ({ templateInfo, personality }) => {
                     }
                   }})}
               >
-                {personality.relationshipQuestions.map((question, i) => {
-                  return (
-                    <option key={i} value={question}>
-                      {question}
-                    </option>
-                  )
-                })}
+                {personality.relationshipQuestions.map((q) => (
+                  <option key={`relationship-${q}`} value={q}>
+                    {q}
+                  </option>
+                ))}
               </select>
 
               <textarea
@@ -398,13 +409,11 @@ export const BioPage = ({ templateInfo, personality }) => {
                     }
                   }})}
               >
-                {personality.hobbyQuestions.map((question, i) => {
-                  return (
-                    <option key={i} value={question}>
-                      {question}
-                    </option>
-                  )
-                })}
+                {personality.hobbyQuestions.map((q) => (
+                  <option key={`hobby-${q}`} value={q}>
+                    {q}
+                  </option>
+                ))}
               </select>
 
               <textarea
@@ -438,66 +447,110 @@ export const BioPage = ({ templateInfo, personality }) => {
           onClick={next}
         />
       </div>
-      <div className={styles.chatContainer}>
-        <div className={styles.chatMessages}>
-          {chatMessages.map((msg, i) => (
-            <div key={i} className={msg.name === 'User' ? styles.userMessage : styles.characterMessage}>
-              <strong>{msg.name}:</strong> {msg.message}
-            </div>
-          ))}
-          {isTyping && <div className={styles.typingIndicator}>Typing...</div>}
-        </div>
-        
-        <div className={styles.chatInput}>
-          <input
-            type="text"
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder="Ask me something..."
-            disabled={!apiKey}
-          />
-          <button 
-            type="button"
-            onClick={handleSendMessage}
-            disabled={!userInput.trim() || !apiKey}
-          >
-            Send
-          </button>
-        </div>
-        <div className={styles.voiceControls}>
+      <div className={styles.tabContainer}>
+        <button 
+          type="button"
+          className={`${styles.tab} ${activeTab === 'chat' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('chat')}
+        >
+          Chat
+        </button>
+        <button 
+          type="button"
+          className={`${styles.tab} ${activeTab === 'model' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('model')}
+        >
+          <Brain size={16} /> Model
+        </button>
+      </div>
+      {activeTab === 'model' && (
+        <div className={styles.modelPanel}>
+          <h4>Select AI Model</h4>
           <select
-            value={selectedVoice || ''}
-            onChange={(e) => {
-              const voice = e.target.value;
-              setSelectedVoice(voice);
-              if (fullBio?.id) {
-                localStorage.setItem(`character_voice_${fullBio.id}`, voice);
-              }
-            }}
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
           >
-            <option value="">Select Voice</option>
-            {Object.keys(voices).map((key) => (
-              <option key={key} value={key}>{key}</option>
+            {Object.entries(AVAILABLE_MODELS).map(([id, model]) => (
+              <option key={id} value={id}>
+                {model.name} ({model.provider}) 
+                {model.tool_use && <span title="Supports tool use">🛠️</span>}
+                - {model.max_tokens.toLocaleString()} tokens
+              </option>
             ))}
           </select>
-          <button 
-            type="button"
-            onClick={() => {
-              if (selectedVoice) {
-                speak('This is a preview of my voice', { 
-                  voice: voices[selectedVoice],
-                  rate: 1.0,
-                  pitch: 1.0 
-                });
-              }
-            }}
-            disabled={!selectedVoice}
-          >
-            Preview Voice
-          </button>
+          <p className={styles.modelDescription}>
+            {AVAILABLE_MODELS[selectedModel]?.description || ''}
+            {AVAILABLE_MODELS[selectedModel]?.tool_use && (
+              <span className={styles.toolIndicator}> • Tool Capable 🛠️</span>
+            )}
+          </p>
         </div>
-      </div>
+      )}
+      {activeTab === 'chat' && (
+        <div className={styles.chatContainer}>
+          <div className={styles.chatMessages}>
+            {chatMessages.map((msg) => (
+              <div 
+                key={`${msg.name}-${msg.message}-${Date.now()}`} 
+                className={msg.name === 'User' ? styles.userMessage : styles.characterMessage}
+              >
+                <strong>{msg.name}:</strong> {msg.message}
+              </div>
+            ))}
+            {isTyping && <div className={styles.typingIndicator}>Typing...</div>}
+          </div>
+          
+          <div className={styles.chatInput}>
+            <input
+              type="text"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder="Ask me something..."
+              disabled={!apiKey}
+            />
+            <button 
+              type="button"
+              onClick={handleSendMessage}
+              disabled={!userInput.trim() || !apiKey}
+            >
+              Send
+            </button>
+          </div>
+          <div className={styles.voiceControls}>
+            <select
+              value={selectedVoice || ''}
+              onChange={(e) => {
+                const voice = e.target.value;
+                setSelectedVoice(voice);
+                if (fullBio?.id) {
+                  localStorage.setItem(`character_voice_${fullBio.id}`, voice);
+                }
+              }}
+            >
+              <option value="">Select Voice</option>
+              {Object.keys(voices).map((key) => (
+                <option key={key} value={key}>{key}</option>
+              ))}
+            </select>
+            <button 
+              type="button"
+              onClick={() => {
+                if (selectedVoice) {
+                  speak('This is a preview of my voice', { 
+                    voice: voices[selectedVoice],
+                    rate: 1.0,
+                    pitch: 1.0 
+                  });
+                }
+              }}
+              disabled={!selectedVoice}
+            >
+              Preview Voice
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

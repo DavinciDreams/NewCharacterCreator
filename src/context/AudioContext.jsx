@@ -1,6 +1,6 @@
 import React, {useState, createContext, useRef, useEffect, useContext} from 'react';
 import { SoundContext } from './SoundContext';
-import bgm from "../../public/sound/background/cc_bgm_balanced.wav"
+import bgm from "/sound/background/cc_bgm_balanced.wav"
 
 export const AudioContext = createContext();
 

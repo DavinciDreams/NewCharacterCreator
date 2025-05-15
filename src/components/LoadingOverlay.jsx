@@ -1,5 +1,5 @@
 import React, {useContext} from "react"
-// import webaMark from "../../public/ui/loading/webaMark.svg"
+import webaMark from "/ui/loading/webaMark.svg"
 
 import styles from './LoadingOverlay.module.css'
 

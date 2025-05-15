@@ -18,6 +18,8 @@ export async function pruneMessages(messages) {
   return newMessages.reverse();
 }
 
+import { DEFAULT_API_KEY } from '../constants/llmModels';
+
 // Get LLM Response
 export async function getLLMResponse({
   messages,
@@ -27,6 +29,13 @@ export async function getLLMResponse({
   options
 }) {
   try {
+    // Use default key if no API key provided
+    const apiKey = llmContext.apiKey || DEFAULT_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('No API key provided');
+    }
+
     // Format messages for LLM
     const llmMessages = messages.map(msg => ({
       role: msg.name === 'User' ? 'user' : 'assistant',
@@ -34,7 +43,12 @@ export async function getLLMResponse({
     }));
 
     // Get response from LLM
-    const response = await llmContext.queryLLM(llmMessages, model, options);
+    const response = await llmContext.queryLLM({
+      messages: llmMessages, 
+      model,
+      options,
+      apiKey
+    });
     
     // Speak the response if audio is enabled
     if (audioContext && !audioContext.isMute) {

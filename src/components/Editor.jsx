@@ -1,6 +1,6 @@
 import React, { Fragment, useEffect, useContext } from "react"
 
-import shuffle from "../../public/ui/traits/shuffle.svg"
+import shuffle from "/ui/traits/shuffle.svg"
 import { AudioContext } from "../context/AudioContext"
 import { SceneContext } from "../context/SceneContext"
 import { SoundContext } from "../context/SoundContext"

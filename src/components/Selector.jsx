@@ -1,28 +1,30 @@
-import React, { useContext, useEffect, useState } from "react"
+import React, { useContext, useEffect, useState, useCallback } from "react"
 import * as THREE from "three"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { VRMLoaderPlugin } from "@pixiv/three-vrm"
-import cancel from "../../public/ui/selector/cancel.png"
-import { addModelData, disposeVRM } from "../library/utils"
-import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from 'three-mesh-bvh';
-import {ViewContext} from "../context/ViewContext"
-import tick from "../../public/ui/selector/tick.svg"
-import { AudioContext } from "../context/AudioContext"
-import { SceneContext } from "../context/SceneContext"
-import { SoundContext } from "../context/SoundContext"
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+import { cullHiddenMeshes, SAH } from '../utils/threeUtils';
+
 import {
+  addModelData,
+  disposeVRM,
   renameVRMBones,
   createFaceNormals,
   createBoneDirection,
+  getAsArray
 } from "../library/utils"
 import { LipSync } from '../library/lipsync'
-import { getAsArray } from "../library/utils"
-import { cullHiddenMeshes } from "../library/utils"
 
+import cancel from "/ui/selector/cancel.png"
+import tick from "/ui/selector/tick.svg"
 import styles from "./Selector.module.css"
-import { TokenBox } from "./token-box/TokenBox"
-import { LanguageContext } from "../context/LanguageContext"
 
+import { TokenBox } from "./token-box/TokenBox"
+import { AudioContext } from "../context/AudioContext"
+import { SceneContext } from "../context/SceneContext"
+import { SoundContext } from "../context/SoundContext"
+import { ViewContext } from "../context/ViewContext"
+import { LanguageContext } from "../context/LanguageContext"
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -61,10 +63,16 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
   const updateCurrentTraitMap = (k,v) => {
     setCurrentTrait(currentTrait.set(k,v));
   }
-  const resetCurrentTraitMap = () => {
+  const resetCurrentTraitMap = useCallback(() => {
     setCurrentTrait(new Map());
-  }
-  
+  }, []);
+
+  useEffect(() => {
+    if (templateInfo.id) {
+      loadSelectedOptions(templateInfo.id);
+    }
+  }, [templateInfo.id]);
+
   useEffect(() => {
     setRestrictions(getRestrictions());
 
@@ -150,19 +158,24 @@ export default function Selector({confirmDialog, templateInfo, animationManager,
 
   // options are selected by random or start
   useEffect(() => {
-    if (selectedOptions.length > 0){
-      setIsChangingWholeAvatar(true);
-      if (selectedOptions.length > 1){
-        effectManager.setTransitionEffect('fade_out_avatar');
-        effectManager.playFadeOutEffect();
+    const handleSelectionChange = async () => {
+      if (effectManager && selectedOptions) {
+        await effectManager.playFadeOutEffect();
+        setSelectedOptions(selectedOptions);
+        setIsChangingWholeAvatar(false);
+        effectManager.setTransitionEffect();
         resetCurrentTraitMap();
       }
-
-      loadSelectedOptions(selectedOptions)
-      setSelectedOptions([]);
-    }
-
-  },[selectedOptions])
+    };
+    
+    handleSelectionChange();
+  }, [
+    effectManager, 
+    selectedOptions, 
+    setSelectedOptions, 
+    setIsChangingWholeAvatar, 
+    resetCurrentTraitMap
+  ]);
 
   const loadCustom = (file) => {
     const url = URL.createObjectURL(file);
