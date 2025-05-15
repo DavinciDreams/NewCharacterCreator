@@ -1,23 +1,52 @@
-import React, {useState, createContext} from 'react';
-export const AudioContext = createContext();
+import React, {useState, createContext, useRef, useEffect, useContext} from 'react';
+import { SoundContext } from './SoundContext';
 import bgm from "../../public/sound/background/cc_bgm_balanced.wav"
 
+export const AudioContext = createContext();
+
 export const AudioProvider = ({ children }) => {
+    const { playSound } = useContext(SoundContext);
     const [isMute, setMute] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const audioRef = React.useRef(null);
+    const audioRef = useRef(null);
+    const audioContextRef = useRef(null);
     const speechSynthesis = window.speechSynthesis;
 
-    const speak = (text, options = {}) => {
+    // Initialize Web Audio API context
+    useEffect(() => {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        return () => {
+            if (audioContextRef.current.state !== 'closed') {
+                audioContextRef.current.close();
+            }
+        };
+    }, []);
+
+    const speak = async (text, options = {}) => {
         if (isMute || !speechSynthesis) return;
+        
+        // Cancel any ongoing speech
+        speechSynthesis.cancel();
         
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.volume = options.volume || 1.0;
         utterance.rate = options.rate || 1.0;
         utterance.pitch = options.pitch || 1.0;
         
+        // Lipsync integration
+        utterance.onboundary = (event) => {
+            if (event.name === 'word') {
+                const word = text.substring(event.charIndex, event.charIndex + event.charLength);
+                const duration = word.length / (options.rate || 1.0) * 0.05; // Adjusted duration factor
+                playSound('speech', { duration });
+            }
+        };
+        
         utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => setIsSpeaking(false);
+        utterance.onend = () => {
+            setIsSpeaking(false);
+            playSound('speech-end');
+        };
         utterance.onerror = () => setIsSpeaking(false);
         
         speechSynthesis.speak(utterance);

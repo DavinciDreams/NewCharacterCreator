@@ -6,6 +6,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { SceneContext } from "./context/SceneContext"
 import { LanguageContext } from "./context/LanguageContext"
 import { ViewMode, ViewContext } from "./context/ViewContext"
+import { AudioContext, AudioProvider } from "./context/AudioContext"
+import { LLMProvider } from "./context/LLMContext"
 
 import { getAsArray } from "./library/utils"
 import { BlinkManager } from "./library/blinkManager"
@@ -259,7 +261,6 @@ export default function App() {
     setConfirmDialogCallback([callback])
   }
 
-
   const fetchNewModel = (index) => {
     //setManifest(manifest)
     setAwaitDisplay(true)
@@ -338,27 +339,36 @@ export default function App() {
   const {t} = useContext(LanguageContext);
 
   return (
-    <Fragment>
-      
-      <div className="generalTitle">Character Studio</div>
+    <LanguageContext.Provider value={languageContextValue}>
+      <LLMProvider>
+        <AudioProvider>
+          <ViewContext.Provider value={viewContextValue}>
+            <SceneContext.Provider value={sceneContextValue}>
+              <Fragment>
+                <div className="generalTitle">Character Studio</div>
 
-      <LanguageSwitch />
-      <MessageWindow
-        confirmDialogText = {confirmDialogText}
-        confirmDialogCallback = {confirmDialogCallback}
-        confirmDialogWindow = {confirmDialogWindow}
-        setConfirmDialogWindow = {setConfirmDialogWindow}
-      />
-      <Background />
-      
-      <Scene
-        manifest={manifest}
-        sceneModel={sceneModel}
-        lookatManager={lookatManager}
-      />
-      
-      {pages[viewMode]}
-      
-    </Fragment>
+                <LanguageSwitch />
+                <MessageWindow
+                  confirmDialogText = {confirmDialogText}
+                  confirmDialogCallback = {confirmDialogCallback}
+                  confirmDialogWindow = {confirmDialogWindow}
+                  setConfirmDialogWindow = {setConfirmDialogWindow}
+                />
+                <Background />
+                
+                <Scene
+                  manifest={manifest}
+                  sceneModel={sceneModel}
+                  lookatManager={lookatManager}
+                />
+                
+                {pages[viewMode]}
+                
+              </Fragment>
+            </SceneContext.Provider>
+          </ViewContext.Provider>
+        </AudioProvider>
+      </LLMProvider>
+    </LanguageContext.Provider>
   )
 }

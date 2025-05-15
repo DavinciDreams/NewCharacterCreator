@@ -1,13 +1,14 @@
-import React, { useContext, useEffect } from "react"
+import React, { useContext, useEffect, useState } from "react"
 import { voices } from "../constants/voices"
 import { favouriteColors } from "../constants/favouriteColors"
 import CustomButton from "../components/custom-button"
 import { ViewContext, ViewMode } from "../context/ViewContext"
 import styles from "./Bio.module.css"
 import { LanguageContext } from "../context/LanguageContext"
-
 import { SoundContext } from "../context/SoundContext"
 import { AudioContext } from "../context/AudioContext"
+import { LLMContext } from "../context/LLMContext"
+import { getLLMResponse } from "../lib/chat"
 
 export const getBio = (templateInfo, personality) => {
   const classType = templateInfo.name.toUpperCase();
@@ -92,10 +93,73 @@ function loadBioFromStorage(itemName){
   return null
 }
 
-function BioPage({ templateInfo, personality }) {
-  const { playSound } = React.useContext(SoundContext)
-  const { isMute } = React.useContext(AudioContext)
-  const { setViewMode } = React.useContext(ViewContext)
+export const BioPage = ({ templateInfo, personality }) => {
+  const { playSound } = useContext(SoundContext)
+  const { isMute, speak } = useContext(AudioContext)
+  const { setViewMode } = useContext(ViewContext)
+  const { apiKey, queryLLM } = useContext(LLMContext)
+  
+  const [fullBio, setFullBio] = React.useState(
+    loadBioFromStorage(`${templateInfo.id}_fulBio`)
+    ||
+    getBio(templateInfo, personality)
+  )
+
+  const [chatMessages, setChatMessages] = useState([]);
+  const [userInput, setUserInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState(null);
+
+  useEffect(() => {
+    if (fullBio?.id) {
+      const savedVoice = localStorage.getItem(`character_voice_${fullBio.id}`);
+      if (savedVoice) setSelectedVoice(savedVoice);
+    }
+  }, [fullBio?.id]);
+
+  const handleSendMessage = async () => {
+    if (!userInput.trim()) return;
+    
+    const newMessage = { 
+      name: 'User', 
+      message: userInput,
+      timestamp: new Date().toISOString() 
+    };
+    
+    setChatMessages(prev => [...prev, newMessage]);
+    setUserInput('');
+    setIsTyping(true);
+    
+    try {
+      // Get character context from existing bio
+      const characterContext = {
+        name: personality?.name,
+        traits: {
+          ...personality,
+          voice: voices[personality?.voiceKey]?.name
+        }
+      };
+      
+      const response = await getLLMResponse({
+        messages: [...chatMessages, newMessage],
+        llmContext: { queryLLM },
+        audioContext: { isMute, speak },
+        options: {
+          system: `You are ${characterContext.name}. ${characterContext.description}`
+        }
+      });
+      
+      setChatMessages(prev => [...prev, {
+        name: characterContext.name,
+        message: response,
+        timestamp: new Date().toISOString()
+      }]);
+    } catch (error) {
+      console.error('Chat error:', error);
+    } finally {
+      setIsTyping(false);
+    }
+  };
 
   const back = () => {
     setViewMode(ViewMode.APPEARANCE)
@@ -106,12 +170,6 @@ function BioPage({ templateInfo, personality }) {
     setViewMode(ViewMode.SAVE)
     !isMute && playSound('backNextButton');
   }
-
-  const [fullBio, setFullBio] = React.useState(
-    loadBioFromStorage(`${templateInfo.id}_fulBio`)
-    ||
-    getBio(templateInfo, personality)
-  )
 
   React.useEffect(() => {
     localStorage.setItem(`${templateInfo.id}_fulBio`, JSON.stringify(fullBio))
@@ -195,8 +253,8 @@ function BioPage({ templateInfo, personality }) {
               <select
                 name="favcolor"
                 className={styles.select}
-                defaultValue={fullBio.colorKey}
-                onChange={(e) => setFullBio({...fullBio, ...{colorKey:e.target.value}})}
+                defaultValue={fullBio.favColor}
+                onChange={(e) => setFullBio({...fullBio, ...{favColor:e.target.value}})}
               >
                 {colorKeys.map((option, i) => {
                   return (
@@ -380,8 +438,68 @@ function BioPage({ templateInfo, personality }) {
           onClick={next}
         />
       </div>
+      <div className={styles.chatContainer}>
+        <div className={styles.chatMessages}>
+          {chatMessages.map((msg, i) => (
+            <div key={i} className={msg.name === 'User' ? styles.userMessage : styles.characterMessage}>
+              <strong>{msg.name}:</strong> {msg.message}
+            </div>
+          ))}
+          {isTyping && <div className={styles.typingIndicator}>Typing...</div>}
+        </div>
+        
+        <div className={styles.chatInput}>
+          <input
+            type="text"
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+            placeholder="Ask me something..."
+            disabled={!apiKey}
+          />
+          <button 
+            type="button"
+            onClick={handleSendMessage}
+            disabled={!userInput.trim() || !apiKey}
+          >
+            Send
+          </button>
+        </div>
+        <div className={styles.voiceControls}>
+          <select
+            value={selectedVoice || ''}
+            onChange={(e) => {
+              const voice = e.target.value;
+              setSelectedVoice(voice);
+              if (fullBio?.id) {
+                localStorage.setItem(`character_voice_${fullBio.id}`, voice);
+              }
+            }}
+          >
+            <option value="">Select Voice</option>
+            {Object.keys(voices).map((key) => (
+              <option key={key} value={key}>{key}</option>
+            ))}
+          </select>
+          <button 
+            type="button"
+            onClick={() => {
+              if (selectedVoice) {
+                speak('This is a preview of my voice', { 
+                  voice: voices[selectedVoice],
+                  rate: 1.0,
+                  pitch: 1.0 
+                });
+              }
+            }}
+            disabled={!selectedVoice}
+          >
+            Preview Voice
+          </button>
+        </div>
+      </div>
     </div>
-  )
-}
+  );
+};
 
 export default BioPage
