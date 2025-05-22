@@ -108,13 +108,13 @@ function BioPage({ templateInfo, personality }) {
   }
 
   const [fullBio, setFullBio] = React.useState(
-    loadBioFromStorage(`${templateInfo.id}_fulBio`)
+    loadBioFromStorage(`${templateInfo.id}_fullBio`)
     ||
     getBio(templateInfo, personality)
   )
 
   React.useEffect(() => {
-    localStorage.setItem(`${templateInfo.id}_fulBio`, JSON.stringify(fullBio))
+    localStorage.setItem(`${templateInfo.id}_fullBio`, JSON.stringify(fullBio))
   }, [fullBio])
 
 

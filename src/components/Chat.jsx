@@ -1,19 +1,21 @@
-import React, { useRef, useEffect, useContext } from 'react'
-import EasySpeech from 'easy-speech'
-import axios from "axios"
-import { voices } from "../constants/voices"
-import { favouriteColors } from "../constants/favouriteColors"
-import { LanguageContext } from "../context/LanguageContext"
-import { SceneContext } from "../context/SceneContext"
-import CustomButton from "./custom-button"
-import { Message } from "./message"
-import styles from "./Chat.module.css"
+import React, { useEffect, useContext } from 'react';
+import axios from "axios";
+import { voices } from "../constants/voices";
+import { favouriteColors } from "../constants/favouriteColors";
+import { LanguageContext } from "../context/LanguageContext";
+import { SceneContext } from "../context/SceneContext";
+import { AudioContext } from "../context/AudioContext";
+import CustomButton from "./custom-button";
+import { Message } from "./message";
+import styles from "./Chat.module.css";
+import useSpeechRecognition from "../hooks/useSpeechRecognition";
 
 const sessionId =
   localStorage.getItem("sessionId") ??
   Math.random().toString(36).substring(2, 15) +
     Math.random().toString(36).substring(2, 15)
 localStorage.setItem("sessionId", sessionId)
+
 
 const defaultSpeaker = "Speaker"
 
@@ -25,9 +27,6 @@ const pruneMessages = (messages) => {
 }
 
 // Speech Recognition setup
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const SpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
-const SpeechRecognitionEvent = window.SpeechRecognitionEvent || window.webkitSpeechRecognitionEvent;
 
 export default function ChatBox({
   templateInfo,
@@ -121,7 +120,6 @@ export default function ChatBox({
     }
   }
 
-
   // Load saved chats from localStorage on mount
   useEffect(() => {
     const keys = Object.keys(localStorage).filter(k => k.startsWith('chat_'))
@@ -140,6 +138,26 @@ export default function ChatBox({
   // Translate hook
   const { t } = useContext(LanguageContext)
 
+  // Default character template for fallback
+  const defaultTemplate = {
+    name: 'Assistant',
+    description: 'I am a helpful AI assistant.',
+    voiceKey: '',
+    colorKey: Object.keys(favouriteColors)[0],
+    greeting: 'Hello! How can I help you today?',
+    personality: {
+      question: 'What kind of assistant are you?',
+      answer: 'I am a friendly and helpful AI assistant, ready to engage in conversation and assist with various tasks.'
+    },
+    relationship: {
+      question: 'How do you interact with users?',
+      answer: 'I aim to be helpful, clear, and engaging while maintaining a professional and friendly demeanor.'
+    },
+    hobbies: {
+      question: 'What topics do you enjoy discussing?',
+      answer: 'I enjoy discussing a wide range of topics and helping users with their questions and tasks.'
+    }
+  };
 
   // Defensive: handle missing templateInfo or fullBio
   let fullBio = null
@@ -147,6 +165,9 @@ export default function ChatBox({
   let bio = ''
   let voice = ''
   let fontColor = favouriteColors[Object.keys(favouriteColors)[0]].fontColor
+  // Define colors for user and agent messages
+  const userColor = favouriteColors.blue.color // Use blue for user messages
+  const agentColor = favouriteColors.green.color // Use green for agent messages
   let greeting = ''
   let question1 = ''
   let question2 = ''
@@ -155,12 +176,37 @@ export default function ChatBox({
   let response2 = ''
   let response3 = ''
   let fullBioError = null
+
   if (!templateInfo || !templateInfo.id) {
-    fullBioError = 'No character template loaded.'
+    // Use default template
+    fullBio = defaultTemplate;
+    name = fullBio.name;
+    bio = fullBio.description;
+    voice = fullBio.voiceKey;
+    fontColor = favouriteColors[fullBio.colorKey]?.fontColor || favouriteColors[Object.keys(favouriteColors)[0]].fontColor;
+    greeting = fullBio.greeting;
+    question1 = fullBio.personality?.question || '';
+    question2 = fullBio.relationship?.question || '';
+    question3 = fullBio.hobbies?.question || '';
+    response1 = fullBio.personality?.answer || '';
+    response2 = fullBio.relationship?.answer || '';
+    response3 = fullBio.hobbies?.answer || '';
   } else {
-    const fullBioStr = localStorage.getItem(`${templateInfo.id}_fulBio`)
+    const fullBioStr = localStorage.getItem(`${templateInfo.id}_fullBio`)
     if (!fullBioStr) {
-      fullBioError = `No character data found for template: ${templateInfo.id}`
+      // Use default template if no data found
+      fullBio = defaultTemplate;
+      name = fullBio.name;
+      bio = fullBio.description;
+      voice = fullBio.voiceKey;
+      fontColor = favouriteColors[fullBio.colorKey]?.fontColor || favouriteColors[Object.keys(favouriteColors)[0]].fontColor;
+      greeting = fullBio.greeting;
+      question1 = fullBio.personality?.question || '';
+      question2 = fullBio.relationship?.question || '';
+      question3 = fullBio.hobbies?.question || '';
+      response1 = fullBio.personality?.answer || '';
+      response2 = fullBio.relationship?.answer || '';
+      response3 = fullBio.hobbies?.answer || '';
     } else {
       try {
         fullBio = JSON.parse(fullBioStr)
@@ -181,31 +227,11 @@ export default function ChatBox({
     }
   }
 
-
   const [speaker, setSpeaker] = React.useState(
     localStorage.getItem("speaker") || defaultSpeaker,
   )
-
-  // EasySpeech voice selection
-  const [availableVoices, setAvailableVoices] = React.useState([])
-  const [selectedVoiceURI, setSelectedVoiceURI] = React.useState(() => localStorage.getItem('selectedVoiceURI') || null)
-
-  // Persist selected voice
-  useEffect(() => {
-    if (selectedVoiceURI) localStorage.setItem('selectedVoiceURI', selectedVoiceURI)
-  }, [selectedVoiceURI])
-
-  useEffect(() => {
-    // Load voices on mount
-    EasySpeech.init({ maxTimeout: 5000, interval: 250 }).then(() => {
-      const voices = EasySpeech.voices()
-      setAvailableVoices(voices)
-      // Set default selected voice
-      if (voices.length > 0 && !selectedVoiceURI) {
-        setSelectedVoiceURI(voices.find(v => v.lang.startsWith('en'))?.voiceURI || voices[0].voiceURI)
-      }
-    })
-  }, [])
+  // Get audio context
+  const { speakText, availableVoices, selectedVoiceURI, setSelectedVoiceURI } = useContext(AudioContext)
 
   // on speaker changer, set local storage
   useEffect(() => {
@@ -230,407 +256,250 @@ ${name}: ${response3}`
   const { lipSync } = React.useContext(SceneContext)
   const [input, setInput] = React.useState("")
   const [messages, setMessages] = React.useState([])
+  const [speechError, setSpeechError] = React.useState(null);
+  const hasRequestedMediaPermission = React.useRef(false);
+  // Track if TTS is currently speaking
+  const isSpeaking = React.useRef(false);
 
-  // --- Core chat logic and handlers (must be defined before useEffect hooks) ---
-  // Helper: TTS output (can be called with partials)
-  // Always use the latest selectedVoiceURI from state
-  const speakOutput = async (output) => {
-    if (!output?.trim()) return;
-    
-    const maxRetries = 3;
-    let attempt = 0;
-    
-    while (attempt < maxRetries) {
-      try {
-        await EasySpeech.init({ maxTimeout: 5000, interval: 250 })
-        const voices = EasySpeech.voices()
-        const selectedVoice = voices.find(v => v.voiceURI === selectedVoiceURI) || voices[0]
-        
-        // Cancel any ongoing speech before starting new one
-        EasySpeech.cancel();
-        
-        await EasySpeech.speak({
-          text: output,
-          voice: selectedVoice,
-          pitch: 1,
-          rate: 1,
-          volume: 1,
-          // Add event handlers for better state management
-          boundary: (e) => console.debug('Word boundary reached:', e.charIndex),
-          error: (e) => {
-            if (e.error !== 'interrupted') {
-              console.warn('EasySpeech error:', e);
-            }
-          }
-        })
-        break; // Success, exit retry loop
-      } catch (e) {
-        attempt++;
-        console.warn(`EasySpeech attempt ${attempt} failed:`, e);
-        
-        if (e.toString().includes('interrupted')) {
-          // For interruption errors, wait briefly before retry
-          await new Promise(resolve => setTimeout(resolve, 100));
-        } else if (attempt === maxRetries) {
-          console.error('EasySpeech failed after all retries:', e);
-        }
-      }
+  // --- Core chat logic and handlers (must be defined before useEffect hooks and before useSpeechRecognition) ---
+  /**
+   * handleUserChatInput - Processes only user input, never agent output
+   * Only called from user typing or speech recognition final transcript
+   */
+  const handleUserChatInput = React.useCallback(async (value) => {
+    // Only process non-empty user input
+    if (!value || value.trim() === "" || waitingForResponse) {
+      return;
     }
-  }
 
-  // Helper: Add or update agent message (for streaming)
-  // Generate a new message ID for each agent response, and use it for all streaming updates
-  const agentMessageId = Math.random().toString(36).slice(2)
-  const addOrUpdateAgentMessage = (output, done = false, id = agentMessageId) => {
-    setMessages((messages) => {
-      // If message with id exists, update it
-      const idx = messages.findIndex(m => m.id === id)
-      if (idx !== -1) {
-        const updated = [...messages]
-        updated[idx] = { ...updated[idx], message: output }
-        return updated
-      } else {
-        // Otherwise, add new
-        return [
-          ...messages,
-          {
-            id: id,
-            name: name,
-            message: output,
-            timestamp: Date.now(),
-            type: 0,
-          },
-        ]
-      }
-    })
-    if (done) setWaitingForResponse(false)
-  }
+    setWaitingForResponse(true);
+    const agent = name;
+    setInput(""); // Clear input field
 
-  const handleUserChatInput = async (value) => {
-    if (value && value !== "" && !waitingForResponse) {
-      setWaitingForResponse(true)
-      const agent = name
-      setInput("")
-      const userMessageOutputObject = {
-        name: speaker,
-        message: value,
-        timestamp: Date.now(),
-        type: 1,
-      }
-      setMessages((messages) => [...messages, userMessageOutputObject])
-      const promptMessages = await pruneMessages(messages)
-      promptMessages.push(`${speaker}: ${value}`)
+    // Add user message with unique ID
+    const userMessageId = Math.random().toString(36).slice(2);
+    const userMessageOutputObject = {
+      id: userMessageId,
+      name: speaker,
+      message: value,
+      timestamp: Date.now(),
+      type: 1, // type 1 is for user messages
+    };
+    setMessages((messages) => [...messages, userMessageOutputObject]);
+    const promptMessages = await pruneMessages(messages);
+    promptMessages.push(`${speaker}: ${value}`);
 
-      // Compose prompt
-      let prompt = `The following is part of a conversation between ${speaker} and ${agent}. ${agent} is descriptive and helpful, and is honest when it doesn't know an answer. Included is a context which acts a short-term memory, used to guide the conversation and track topics.\n\nCONTEXT:\n\nInfo about ${agent}\n---\n\nBio: "${bio}"\n\nQuestion 1: "${question1}"\nResponse 1: "${response1}"\n\nQuestion 2: "${question2}"\nResponse 2: "${response2}"\n\nQuestion 3: "${question3}"\nResponse 3: "${response3}"\n\nMOST RECENT MESSAGES:\n\n${promptMessages.join("\n")}\n${agent}:`
+    // Compose prompt
+    let prompt = `The following is part of a conversation between ${speaker} and ${agent}. ${agent} is descriptive and helpful, and is honest when it doesn't know an answer. Included is a context which acts a short-term memory, used to guide the conversation and track topics.\n\nCONTEXT:\n\nInfo about ${agent}\n---\n\nBio: "${bio}"\n\nQuestion 1: "${question1}"\nResponse 1: "${response1}"\n\nQuestion 2: "${question2}"\nResponse 2: "${response2}"\n\nQuestion 3: "${question3}"\nResponse 3: "${response3}"\n\nMOST RECENT MESSAGES:\n\n${promptMessages.join("\n")}\n${agent}:`;
 
-      // AI Service Routing
-      try {
-        // Generate a new message ID for this response
-        const thisAgentMessageId = Math.random().toString(36).slice(2)
-        if (aiService === 'litellm' || aiService === 'openrouter' || aiService === 'lmstudio') {
-          // Streaming for OpenAI-compatible APIs (LiteLLM, OpenRouter, LM Studio)
-          let url, headers, body
-          if (aiService === 'litellm') {
-            url = litellmUrl
-            headers = { 'Content-Type': 'application/json' }
-            if (litellmKey) headers['Authorization'] = `Bearer ${litellmKey}`
-            body = {
-              model: litellmModel,
-              messages: [
-                { role: 'system', content: 'You are a helpful assistant.' },
-                ...promptMessages.map(m => {
-                  const [name, ...rest] = m.split(':')
-                  return {
-                    role: name.trim() === speaker ? 'user' : 'assistant',
-                    content: rest.join(':').trim()
-                  }
-                }),
-              ],
-              max_tokens: 400,
-              temperature: 0.9,
-              stream: true,
-            }
-          } else if (aiService === 'openrouter') {
-            url = 'https://openrouter.ai/api/v1/chat/completions'
-            headers = {
-              'Authorization': `Bearer ${openRouterKey}`,
-              'Content-Type': 'application/json',
-            }
-            body = {
-              model: openRouterModel,
-              messages: [
-                { role: 'system', content: 'You are a helpful assistant.' },
-                ...promptMessages.map(m => {
-                  const [name, ...rest] = m.split(':')
-                  return {
-                    role: name.trim() === speaker ? 'user' : 'assistant',
-                    content: rest.join(':').trim()
-                  }
-                }),
-              ],
-              max_tokens: 400,
-              temperature: 0.9,
-              stream: true,
-            }
-          } else if (aiService === 'lmstudio') {
-            url = lmStudioUrl
-            headers = { 'Content-Type': 'application/json' }
-            body = {
-              model: lmStudioModel,
-              messages: [
-                { role: 'system', content: 'You are a helpful assistant.' },
-                ...promptMessages.map(m => {
-                  const [name, ...rest] = m.split(':')
-                  return {
-                    role: name.trim() === speaker ? 'user' : 'assistant',
-                    content: rest.join(':').trim()
-                  }
-                }),
-              ],
-              max_tokens: 400,
-              temperature: 0.9,
-              stream: true,
-            }
+    // AI Service Routing
+    try {
+      // Generate a new message ID for this response
+      const thisAgentMessageId = Math.random().toString(36).slice(2);
+      if (aiService === 'litellm' || aiService === 'openrouter' || aiService === 'lmstudio') {
+        // Streaming for OpenAI-compatible APIs (LiteLLM, OpenRouter, LM Studio)
+        let url, headers, body;
+        if (aiService === 'litellm') {
+          url = litellmUrl;
+          headers = { 'Content-Type': 'application/json' };
+          if (litellmKey) headers['Authorization'] = `Bearer ${litellmKey}`;
+          body = {
+            model: litellmModel,
+            messages: [
+              { role: 'system', content: 'You are a helpful assistant.' },
+              ...promptMessages.map(m => {
+                const [name, ...rest] = m.split(':');
+                return {
+                  role: name.trim() === speaker ? 'user' : 'assistant',
+                  content: rest.join(':').trim()
+                };
+              }),
+            ],
+            max_tokens: 400,
+            temperature: 0.9,
+            stream: true,
+          };
+        } else if (aiService === 'openrouter') {
+          url = 'https://openrouter.ai/api/v1/chat/completions';
+          headers = {
+            'Authorization': `Bearer ${openRouterKey}`,
+            'Content-Type': 'application/json',
+          };
+          body = {
+            model: openRouterModel,
+            messages: [
+              { role: 'system', content: 'You are a helpful assistant.' },
+              ...promptMessages.map(m => {
+                const [name, ...rest] = m.split(':');
+                return {
+                  role: name.trim() === speaker ? 'user' : 'assistant',
+                  content: rest.join(':').trim()
+                };
+              }),
+            ],
+            max_tokens: 400,
+            temperature: 0.9,
+            stream: true,
+          };
+        } else if (aiService === 'lmstudio') {
+          url = lmStudioUrl;
+          headers = { 'Content-Type': 'application/json' };
+          body = {
+            model: lmStudioModel,
+            messages: [
+              { role: 'system', content: 'You are a helpful assistant.' },
+              ...promptMessages.map(m => {
+                const [name, ...rest] = m.split(':');
+                return {
+                  role: name.trim() === speaker ? 'user' : 'assistant',
+                  content: rest.join(':').trim()
+                };
+              }),
+            ],
+            max_tokens: 400,
+            temperature: 0.9,
+            stream: true,
+          };
+        }
+
+        // Speech streaming setup
+        let fullText = '';
+        let ttsBuffer = '';
+
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+          });
+
+          if (!response.body || !window.ReadableStream) {
+            // Fallback for non-streaming support
+            const data = await response.json();
+            const output = data.choices[0].message.content;
+            addOrUpdateAgentMessage(output, true, thisAgentMessageId);
+            return;
           }
 
-          // Streaming fetch
-          let fullText = ''
-          let ttsBuffer = ''
-          let ttsTimeout = null
-          const speakChunk = async (chunk) => {
-            if (chunk.trim()) await speakOutput(chunk)
-          }
-          try {
-            const response = await fetch(url, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify(body),
-            })
-            if (!response.body || !window.ReadableStream) {
-              // Fallback to non-streaming if not supported
-              const data = await response.json()
-              const output = data.choices[0].message.content
-              await speakOutput(output)
-              addOrUpdateAgentMessage(output, true, thisAgentMessageId)
-              return
-            }
-            const reader = response.body.getReader()
-            const decoder = new TextDecoder('utf-8')
-            let done = false
-            while (!done) {
-              const { value, done: doneReading } = await reader.read()
-              done = doneReading
-              if (value) {
-                const chunk = decoder.decode(value)
-                // OpenAI streaming format: lines starting with 'data: '
-                const lines = chunk.split('\n').filter(l => l.trim().startsWith('data: '))
-                for (const line of lines) {
-                  const dataStr = line.replace('data: ', '').trim()
-                  if (dataStr === '[DONE]') continue
-                  try {
-                    const data = JSON.parse(dataStr)
-                    const delta = data.choices?.[0]?.delta?.content || data.choices?.[0]?.message?.content || ''
-                    if (delta) {
-                      fullText += delta
-                      addOrUpdateAgentMessage(fullText, false, thisAgentMessageId)
-                      ttsBuffer += delta
-                      // Speak in small chunks (sentence or every 40 chars)
-                      if (ttsBuffer.length > 40 || /[.!?]\s$/.test(ttsBuffer)) {
-                        const toSpeak = ttsBuffer
-                        ttsBuffer = ''
-                        // Speak chunk async, but don't await to avoid blocking
-                        speakChunk(toSpeak)
-                      }
-                    }
-                  } catch (e) { /* ignore parse errors */ }
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n').filter(l => l.trim().startsWith('data: '));
+
+            for (const line of lines) {
+              const dataStr = line.replace('data: ', '').trim();
+              if (dataStr === '[DONE]') continue;
+
+              try {
+                const data = JSON.parse(dataStr);
+                const delta = data.choices?.[0]?.delta?.content || data.choices?.[0]?.message?.content || '';
+
+                if (delta) {
+                  fullText += delta;
+                  addOrUpdateAgentMessage(fullText, false, thisAgentMessageId);
                 }
+              } catch (e) {
+                console.warn('Error parsing streaming response:', e);
               }
             }
-            // Speak any remaining buffer
-            if (ttsBuffer.trim()) await speakOutput(ttsBuffer)
-            addOrUpdateAgentMessage(fullText, true, thisAgentMessageId)
-          } catch (err) {
-            addOrUpdateAgentMessage('[AI streaming error: ' + (err?.message || 'Unknown error') + ']', true, thisAgentMessageId)
           }
-        } else if (aiService === 'ollama') {
-          // Ollama (local)
-          const response = await axios.post(ollamaUrl, {
-            model: ollamaModel,
-            prompt,
-            stream: false
-          })
-          // Ollama returns { response: "..." } or { choices: [{text: ...}] }
-          const output = response.data.response || (response.data.choices && response.data.choices[0].text) || response.data.text || '[No response]'
-          await speakOutput(output)
-          addOrUpdateAgentMessage(output, true)
-        } else {
-          addOrUpdateAgentMessage('[No AI service selected]', true)
+
+          addOrUpdateAgentMessage(fullText, true, thisAgentMessageId);
+        } catch (err) {
+          console.error('Streaming error:', err);
+          addOrUpdateAgentMessage('[AI streaming error: ' + (err?.message || 'Unknown error') + ']', true, thisAgentMessageId);
         }
-      } catch (error) {
-        setWaitingForResponse(false)
-        addOrUpdateAgentMessage('[AI Error: ' + (error?.message || 'Unknown error') + ']', true)
-        console.error(error)
+      } else if (aiService === 'ollama') {
+        // Ollama (local)
+        const response = await axios.post(ollamaUrl, {
+          model: ollamaModel,
+          prompt,
+          stream: false
+        });
+        const output = response.data.response || (response.data.choices && response.data.choices[0].text) || response.data.text || '[No response]';
+        addOrUpdateAgentMessage(output, true);
+      } else {
+        addOrUpdateAgentMessage('[No AI service selected]', true);
       }
+    } catch (error) {
+      setWaitingForResponse(false);
+      addOrUpdateAgentMessage('[AI Error: ' + (error?.message || 'Unknown error') + ']', true);
+      console.error(error);
+    } finally {
+      setWaitingForResponse(false);
     }
-  }
+  }, [messages, waitingForResponse, name, speaker, bio, question1, response1, question2, response2, question3, response3, aiService, litellmUrl, litellmModel, litellmKey, openRouterKey, openRouterModel, lmStudioUrl, lmStudioModel, ollamaUrl, ollamaModel, setWaitingForResponse, setInput, setMessages, t]);
 
   const handleChange = async (event) => {
-    event.preventDefault()
-    setInput(event.target.value)
-  }
+    event.preventDefault();
+    setInput(event.target.value);
+  };
 
-  // --- Robust SpeechRecognition setup (internal, not via props) ---
-  const recognitionRef = useRef(null)
-  const [speechError, setSpeechError] = React.useState(null)
-
-  useEffect(() => {
-    if (!SpeechRecognition) {
-      setSpeechError('Speech recognition is not supported in this browser')
-      setMicEnabled(false)
-      return
+  // --- Use the custom useSpeechRecognition hook for STT ---
+  const { start, stop, isRecognizing } = useSpeechRecognition({
+    onResult: ({ interimTranscript, finalTranscript }) => {
+      // Only update input state from user speech recognition
+      if (interimTranscript) {
+        setInput(interimTranscript); // Only update from interim transcript
+      }
+      if (finalTranscript) {
+        setInput(''); // Clear input after final transcript
+        stopSpeech();
+        handleUserChatInput(finalTranscript.trim()); // Process final transcript as user input
+      }
+    },
+    onError: (e) => setSpeechError(e.error),
+    onStart: () => {
+      setInput('Listening...');
+      setMicEnabled(true);
+    },
+    onEnd: () => {
+      setInput(''); // Clear input when speech recognition ends
+      setMicEnabled(false);
+    },
+    lang: 'en-US',
+    interim: true,
+    continuous: false, // Changed to false to prevent continuous listening
+    enabled: !waitingForResponse && !isSpeaking.current, // Disable speech recognition while waiting for AI response or when TTS is active
+  });
+  
+  // Use only the hook's start/stop for speech
+  const startSpeech = async () => {
+    // Don't start speech recognition if waiting for AI response or if TTS is active
+    if (waitingForResponse || isSpeaking.current) {
+      setSpeechError("Cannot start speech recognition while AI is responding or speaking");
+      return;
     }
     
-    const setupRecognition = () => {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
-      recognition.lang = 'en-US'; // Make this configurable based on user's language
-
-      // Add grammar support if available
-      if (SpeechGrammarList) {
-        const speechRecognitionList = new SpeechGrammarList();
-        recognition.grammars = speechRecognitionList;
-      }
-      
-      recognition.onstart = () => {
-        setSpeechError(null);
-        setInput('Listening...');
-        console.log('Speech recognition started');
-      };
-      
-      recognition.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-        
-        // Show interim results while speaking
-        if (interimTranscript) {
-          setInput(interimTranscript);
-        }
-        
-        // Send final results when done speaking
-        if (finalTranscript) {
-          setInput('');
-          handleUserChatInput(finalTranscript.trim());
-        }
-      };
-      
-      recognition.onerror = (event) => {
-        // Don't treat 'aborted' as an error when we intentionally stop
-        if (event.error === 'aborted' && !micEnabled) {
-          return;
-        }
-        
-        console.error('Speech recognition error:', event);
-        
-        const errorMessages = {
-          'no-speech': 'No speech was detected. Please try again.',
-          'audio-capture': 'No microphone was found. Ensure it is plugged in and allowed.',
-          'not-allowed': 'Microphone permission was denied. Please allow access.',
-          'network': 'Network error occurred. Check your connection.',
-          'aborted': 'Speech recognition was interrupted.',
-          'language-not-supported': 'The selected language is not supported.',
-          'service-not-allowed': 'Speech recognition service not allowed. Try reloading.',
-        };
-        
-        setSpeechError(errorMessages[event.error] || `Error: ${event.error}`);
-        setMicEnabled(false);
-        setInput('');
-      };
-      
-      recognition.onend = () => {
-        console.log('Speech recognition ended');
-        // Only attempt to restart if explicitly enabled
-        if (micEnabled) {
-          try {
-            // Small delay before restarting to prevent rapid cycling
-            setTimeout(() => {
-              if (micEnabled && recognitionRef.current) {
-                recognition.start();
-              }
-            }, 200);
-          } catch (e) {
-            console.warn('Could not restart recognition:', e);
-            setMicEnabled(false);
-            setSpeechError('Failed to restart speech recognition');
-          }
-        }
-      };
-      
-      recognitionRef.current = recognition;
-    };
-
-    setupRecognition();
-    
-    return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          // Ignore errors when stopping
-        }
-      }
-    };
-  }, [micEnabled, handleUserChatInput])
-
-  const startSpeech = async () => {
     setSpeechError(null);
     try {
-      // First check if speech recognition is available
-      if (!recognitionRef.current) {
-        throw new Error('Speech recognition is not available');
+      // Only request media permission if we haven't already
+      if (!hasRequestedMediaPermission.current) {
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+          hasRequestedMediaPermission.current = true;
+        } catch (err) {
+          console.error('Media permission error:', err);
+          const errorMessage = err.name === 'NotAllowedError'
+            ? 'Microphone access was denied. Please allow microphone access in your browser settings.'
+            : err.message || 'Failed to get microphone permission';
+          setSpeechError(errorMessage);
+          setMicEnabled(false);
+          return;
+        }
       }
 
-      // Request microphone permission first
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      // Stop any existing recognition
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          // Ignore stop errors
-        }
-      }
-      
-      // Start new recognition session
-      await new Promise((resolve, reject) => {
-        try {
-          recognitionRef.current.onstart = () => {
-            setMicEnabled(true);
-            resolve();
-          };
-          recognitionRef.current.onerror = (err) => reject(err);
-          recognitionRef.current.start();
-        } catch (e) {
-          reject(e);
-        }
-      });
+      // Start recognition
+      await start();
+      setMicEnabled(true);
     } catch (err) {
       console.error('Speech start error:', err);
-      const errorMessage = err.name === 'NotAllowedError' 
-        ? 'Microphone access was denied. Please allow microphone access in your browser settings.'
-        : err.message || 'Failed to start speech recognition';
+      const errorMessage = err.message || 'Failed to start speech recognition';
       setSpeechError(errorMessage);
       setMicEnabled(false);
     }
@@ -638,19 +507,19 @@ ${name}: ${response3}`
 
   const stopSpeech = () => {
     try {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        setMicEnabled(false);
-      }
+      stop();
+      setMicEnabled(false);
     } catch (err) {
       console.error('Error stopping speech recognition:', err);
     }
   };
-
   useEffect(() => {
     // Focus back on input when the response is given
     if (!waitingForResponse) {
-      document.getElementById("messageInput").focus()
+      const inputElement = document.getElementById("messageInput")
+      if (inputElement) {
+        inputElement.focus()
+      }
     }
   }, [waitingForResponse])
 
@@ -666,16 +535,65 @@ ${name}: ${response3}`
     }
   }
 
+  /**
+   * addOrUpdateAgentMessage - Adds or updates an agent message
+   * Only calls speakText for agent messages, never for user input
+   */
+  function addOrUpdateAgentMessage(content, isFinal, messageId) {
+    setMessages(prevMessages => {
+      // If the message already exists, update it; otherwise, add it
+      const idx = prevMessages.findIndex(m => m.id === messageId);
+      if (idx !== -1) {
+        // Update existing
+        const updated = [...prevMessages];
+        updated[idx] = {
+          ...updated[idx],
+          message: content,
+          type: 0, // AI message
+          timestamp: Date.now(),
+        };
+        return updated;
+      } else {
+        // Add new
+        return [
+          ...prevMessages,
+          {
+            id: messageId,
+            name,
+            message: content,
+            type: 0, // AI message
+            timestamp: Date.now(),
+          },
+        ];
+      }
+    });
 
-
-  if (fullBioError) {
-    return (
-      <div style={{ padding: 32, color: 'red', background: '#fffbe6', border: '1px solid #ffd700', borderRadius: 8, margin: 32 }}>
-        <h2>Chat Not Available</h2>
-        <p>{fullBioError}</p>
-        <p>Please select a character or reload the page after creating one.</p>
-      </div>
-    )
+    // Only call speakText for agent messages (type 0) when final
+    // Never call for user input (type 1) or interim updates
+    if (isFinal && content && speakText) {
+      // Ensure microphone is disabled before AI speaks to prevent feedback loop
+      if (micEnabled) {
+        stopSpeech();
+      }
+      
+      // Mark that TTS is active to prevent STT from starting
+      isSpeaking.current = true;
+      
+      // Speak the text after a short delay to ensure mic is fully stopped
+      setTimeout(() => {
+        // Create a wrapper around speakText to track when speaking is done
+        const speakWithTracking = async () => {
+          try {
+            await speakText(content);
+          } finally {
+            // Mark that TTS is no longer active
+            isSpeaking.current = false;
+          }
+        };
+        
+        speakWithTracking();
+      }, 300);
+    }
   }
 
   return (
@@ -817,9 +735,7 @@ ${name}: ${response3}`
           defaultValue={speaker}
           onChange={(e) => setSpeaker(e.target.value)}
         />
-      </div>
-
-      {/* Voice selection dropdown */}
+      </div>      {/* Voice selection dropdown */}
       <div className={styles["speaker"]}>
         <label htmlFor="voiceSelect">TTS Voice</label>
         <select
@@ -828,7 +744,7 @@ ${name}: ${response3}`
           onChange={e => setSelectedVoiceURI(e.target.value)}
           style={{ width: '100%', marginBottom: 8 }}
         >
-          {availableVoices.map(v => (
+          {availableVoices?.map(v => (
             <option key={v.voiceURI} value={v.voiceURI}>
               {v.name} ({v.lang}){v.default ? ' [default]' : ''}
             </option>
@@ -839,19 +755,16 @@ ${name}: ${response3}`
       <label>{t("labels.conversation")}</label>
       <div className={styles["messages"]}>
         <div className={styles["scrollBox"]} id={"msgscroll"}>
-          {messages.map((msg, index) => {
-            if (msg.timestamp)
-              return (
-                <Message
-                  key={index}
-                  name={msg.name}
-                  timestamp={msg.timestamp}
-                  message={msg.message}
-                  type={msg.type}
-                  color={fontColor}
-                />
-              )
-          })}
+          {messages.map((msg, index) => (
+            <Message
+              key={index}
+              name={msg.name}
+              timestamp={msg.timestamp}
+              message={msg.message}
+              type={msg.type}
+              color={msg.type === 1 ? userColor : agentColor} // Differentiate visually
+            />
+          ))}
         </div>
       </div>
 
@@ -864,10 +777,19 @@ ${name}: ${response3}`
           type="icon"
           theme="light"
           icon="microphone"
-          className={styles.mic}
+          className={`${styles.mic} ${micEnabled ? styles.active : ''}`}
           size={32}
           active={!!micEnabled}
-          onClick={() => (!micEnabled ? startSpeech() : stopSpeech())}
+          disabled={waitingForResponse || isSpeaking.current} // Disable mic button while agent is responding or speaking
+          onClick={e => {
+            e.preventDefault();
+            setSpeechError(null);
+            if (!micEnabled) {
+              startSpeech();
+            } else {
+              stopSpeech();
+            }
+          }}
         />
         <input
           autoComplete="off"
@@ -897,5 +819,5 @@ ${name}: ${response3}`
         <span style={{ color: fontColor }}>{name}</span> is typing...
       </p>
     </div>
-  )
+  );
 }

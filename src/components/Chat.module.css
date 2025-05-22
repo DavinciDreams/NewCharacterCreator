@@ -137,4 +137,14 @@
     display: inline-block;
 }
 
-  
+.agentMessage {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+.userMessage {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
